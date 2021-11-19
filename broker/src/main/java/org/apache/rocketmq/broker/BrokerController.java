@@ -887,6 +887,7 @@ public class BrokerController {
             this.registerBrokerAll(true, false, true);
         }
 
+
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override

@@ -79,8 +79,11 @@ public class NamesrvStartup {
             return null;
         }
 
+        // NameServer配置文件
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
+        // Netty配置文件
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
+        // 设置监听端口
         nettyServerConfig.setListenPort(9876);
         if (commandLine.hasOption('c')) {
             String file = commandLine.getOptionValue('c');

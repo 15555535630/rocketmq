@@ -45,14 +45,31 @@ import org.apache.rocketmq.common.protocol.route.TopicRouteData;
 import org.apache.rocketmq.common.sysflag.TopicSysFlag;
 import org.apache.rocketmq.remoting.common.RemotingUtil;
 
+/***
+ * 路由信息管理
+ */
 public class RouteInfoManager {
+
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
+    // 代理通道过期时间
     private final static long BROKER_CHANNEL_EXPIRED_TIME = 1000 * 60 * 2;
+
+    // 读写锁
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+
+    // topicQueueTable：topic消息队列的路由信息，消息发送时根据路由表进行负载均衡。
     private final HashMap<String/* topic */, List<QueueData>> topicQueueTable;
+
+    // brokerAddrTable：Broker基础信息，包含brokerName、所属集群名称、主备Broker地址。
     private final HashMap<String/* brokerName */, BrokerData> brokerAddrTable;
+
+    // clusterAddrTable：Broker集群信息，存储集群中所有Broker的名称。
     private final HashMap<String/* clusterName */, Set<String/* brokerName */>> clusterAddrTable;
+
+    // brokerLiveTable：Broker状态信息，NameServer每次收到心跳包时会替换该信息。
     private final HashMap<String/* brokerAddr */, BrokerLiveInfo> brokerLiveTable;
+
+    // filterServerTable：Broker上的FilterServer列表，用于类模式消息过滤。类模式过滤机制在4.4及以后版本被废弃。
     private final HashMap<String/* brokerAddr */, List<String>/* Filter Server */> filterServerTable;
 
     public RouteInfoManager() {
@@ -63,6 +80,7 @@ public class RouteInfoManager {
         this.filterServerTable = new HashMap<String, List<String>>(256);
     }
 
+    // 获取所有集群信息
     public byte[] getAllClusterInfo() {
         ClusterInfo clusterInfoSerializeWrapper = new ClusterInfo();
         clusterInfoSerializeWrapper.setBrokerAddrTable(this.brokerAddrTable);
@@ -70,6 +88,7 @@ public class RouteInfoManager {
         return clusterInfoSerializeWrapper.encode();
     }
 
+    // 删除Topic
     public void deleteTopic(final String topic) {
         try {
             try {
@@ -83,6 +102,7 @@ public class RouteInfoManager {
         }
     }
 
+    // 获取所有Topic
     public byte[] getAllTopicList() {
         TopicList topicList = new TopicList();
         try {
@@ -99,10 +119,15 @@ public class RouteInfoManager {
         return topicList.encode();
     }
 
+    // 注册Broker
     public RegisterBrokerResult registerBroker(
+        // 集群名称
         final String clusterName,
+        // broker地址
         final String brokerAddr,
+        // broker名称
         final String brokerName,
+        // brokerId
         final long brokerId,
         final String haServerAddr,
         final TopicConfigSerializeWrapper topicConfigWrapper,
