@@ -62,6 +62,7 @@ public class BrokerOuterAPI {
     private final RemotingClient remotingClient;
     private final TopAddressing topAddressing = new TopAddressing(MixAll.getWSAddr());
     private String nameSrvAddr = null;
+    // 线程池
     private BrokerFixedThreadPoolExecutor brokerOuterExecutor = new BrokerFixedThreadPoolExecutor(4, 10, 1, TimeUnit.MINUTES,
         new ArrayBlockingQueue<Runnable>(32), new ThreadFactoryImpl("brokerOutApi_thread_", true));
 
@@ -100,6 +101,10 @@ public class BrokerOuterAPI {
         return nameSrvAddr;
     }
 
+    /***
+     * 更新NameServer服务器地址列表
+     * @param addrs
+     */
     public void updateNameServerAddressList(final String addrs) {
         List<String> lst = new ArrayList<String>();
         String[] addrArray = addrs.split(";");
@@ -110,22 +115,42 @@ public class BrokerOuterAPI {
         this.remotingClient.updateNameServerAddressList(lst);
     }
 
+    /***
+     * broker向所有nameserver注册
+     * @param clusterName   集群名称
+     * @param brokerAddr    broker地址
+     * @param brokerName    broker名称
+     * @param brokerId      brokerId=0表示主节点，brokerId>0表示从节点
+     * @param haServerAddr  主节点地址，初次请求时该值为空，从节点向NameServer注册后返回
+     * @param topicConfigWrapper topicConfigWrapper内部封装的是TopicConfig Manager中的topicConfigTable，内部存储的是Broker启动时默认的一些topic，如MixAll.SELF_TEST_TOPIC、MixAll.DEFAULT_TOPIC（AutoCreateTopic-Enable=true）、MixAll.BENCHMARK_TOPIC、MixAll.OFFSET_MOVED_EVENT、BrokerConfig#brokerClusterName、BrokerConfig#brokerName。Broker中topic默认存储在${Rocket_Home}/store/confg/topics.json中。
+     * @param filterServerList 消息过滤服务器列表
+     * @param oneway
+     * @param timeoutMills
+     * @param compressed
+     * @return java.util.List<org.apache.rocketmq.common.namesrv.RegisterBrokerResult>
+     */
     public List<RegisterBrokerResult> registerBrokerAll(
+        // 集群名称
         final String clusterName,
+        // broker地址
         final String brokerAddr,
+        // broker名称
         final String brokerName,
+        // brokerId
         final long brokerId,
         final String haServerAddr,
         final TopicConfigSerializeWrapper topicConfigWrapper,
         final List<String> filterServerList,
         final boolean oneway,
+        // 超时时间
         final int timeoutMills,
         final boolean compressed) {
 
         final List<RegisterBrokerResult> registerBrokerResultList = new CopyOnWriteArrayList<>();
         List<String> nameServerAddressList = this.remotingClient.getNameServerAddressList();
+        // 遍历所有 NameServer 列表
         if (nameServerAddressList != null && nameServerAddressList.size() > 0) {
-
+            // 请求头
             final RegisterBrokerRequestHeader requestHeader = new RegisterBrokerRequestHeader();
             requestHeader.setBrokerAddr(brokerAddr);
             requestHeader.setBrokerId(brokerId);
@@ -135,17 +160,21 @@ public class BrokerOuterAPI {
             requestHeader.setCompressed(compressed);
 
             RegisterBrokerBody requestBody = new RegisterBrokerBody();
+            // topic配置文件
             requestBody.setTopicConfigSerializeWrapper(topicConfigWrapper);
+            // 过滤服务器列表
             requestBody.setFilterServerList(filterServerList);
             final byte[] body = requestBody.encode(compressed);
             final int bodyCrc32 = UtilAll.crc32(body);
             requestHeader.setBodyCrc32(bodyCrc32);
+            // countDownLatch 作用
             final CountDownLatch countDownLatch = new CountDownLatch(nameServerAddressList.size());
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
                         try {
+                            // 向nameserver注册
                             RegisterBrokerResult result = registerBroker(namesrvAddr, oneway, timeoutMills, requestHeader, body);
                             if (result != null) {
                                 registerBrokerResultList.add(result);
@@ -162,6 +191,7 @@ public class BrokerOuterAPI {
             }
 
             try {
+                // 等待注册完成 等待指定时间
                 countDownLatch.await(timeoutMills, TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
             }
@@ -170,6 +200,17 @@ public class BrokerOuterAPI {
         return registerBrokerResultList;
     }
 
+    /***
+     *
+     * @author xiangbin
+     * @date 2021/11/22 14:59
+     * @param namesrvAddr nameserver地址
+     * @param oneway
+     * @param timeoutMills  超时时间
+     * @param requestHeader 请求头
+     * @param body          请求参数
+     * @return org.apache.rocketmq.common.namesrv.RegisterBrokerResult
+     */
     private RegisterBrokerResult registerBroker(
         final String namesrvAddr,
         final boolean oneway,
