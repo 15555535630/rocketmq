@@ -62,6 +62,9 @@ public class ClientConfig {
 
     private LanguageCode language = LanguageCode.JAVA;
 
+    /***
+     * 构建MQ客户端Id
+     */
     public String buildMQClientId() {
         StringBuilder sb = new StringBuilder();
         sb.append(this.getClientIP());

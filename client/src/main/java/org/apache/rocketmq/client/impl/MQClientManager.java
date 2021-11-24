@@ -44,10 +44,18 @@ public class MQClientManager {
         return getOrCreateMQClientInstance(clientConfig, null);
     }
 
+    /***
+     * 获取或创建MQ客户端实例
+     * @param clientConfig
+     * @param rpcHook
+     * @return org.apache.rocketmq.client.impl.factory.MQClientInstance
+     */
     public MQClientInstance getOrCreateMQClientInstance(final ClientConfig clientConfig, RPCHook rpcHook) {
+        // clientId = 客户端IP@instance@unitname
         String clientId = clientConfig.buildMQClientId();
         MQClientInstance instance = this.factoryTable.get(clientId);
         if (null == instance) {
+            // 构建客户端实例
             instance =
                 new MQClientInstance(clientConfig.cloneClientConfig(),
                     this.factoryIndexGenerator.getAndIncrement(), clientId, rpcHook);
