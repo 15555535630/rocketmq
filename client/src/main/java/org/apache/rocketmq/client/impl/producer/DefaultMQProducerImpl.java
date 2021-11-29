@@ -188,6 +188,12 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         this.start(true);
     }
 
+    /***
+     * 消息生产者启动流程
+     * @author xiangbin
+     * @date 2021/11/29 11:14
+     * @param startFactory
+     */
     public void start(final boolean startFactory) throws MQClientException {
         switch (this.serviceState) {
             case CREATE_JUST:
@@ -203,7 +209,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 // ConcurrentMap<String/* clientId */, MQClientInstance> factoryTable =new ConcurrentHashMap<String, MQClientInstance>()，
                 // 即同一个clientId只会创建一个MQClientInstance实例
                 this.mQClientFactory = MQClientManager.getInstance().getOrCreateMQClientInstance(this.defaultMQProducer, rpcHook);
-
+                // 第三步：向MQClientInstance注册服务，将当前生产者加入MQClientInstance管理，方便后续调用网络请求、进行心跳检测等
                 boolean registerOK = mQClientFactory.registerProducer(this.defaultMQProducer.getProducerGroup(), this);
                 if (!registerOK) {
                     this.serviceState = ServiceState.CREATE_JUST;
@@ -213,7 +219,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 }
 
                 this.topicPublishInfoTable.put(this.defaultMQProducer.getCreateTopicKey(), new TopicPublishInfo());
-
+                // 第四步：启动MQClientInstance，如果MQClientInstance已经启动，则本次启动不会真正执行  ？？？
                 if (startFactory) {
                     mQClientFactory.start();
                 }
@@ -580,6 +586,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         long beginTimestampFirst = System.currentTimeMillis();
         long beginTimestampPrev = beginTimestampFirst;
         long endTimestamp = beginTimestampFirst;
+        // 获取主题的路由信息
         TopicPublishInfo topicPublishInfo = this.tryToFindTopicPublishInfo(msg.getTopic());
         if (topicPublishInfo != null && topicPublishInfo.ok()) {
             boolean callTimeout = false;
@@ -712,14 +719,24 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             null).setResponseCode(ClientErrorCode.NOT_FOUND_TOPIC_EXCEPTION);
     }
 
+    /***
+     * 查找主题路由信息
+     * 如果没有缓存或没有包含消息队列，则向NameServer查询该topic的路由信息。如果最终未找到路由信息，则抛出异常，表示无法找到主题相关路由信息异常。
+     * @param topic
+     * @return org.apache.rocketmq.client.impl.producer.TopicPublishInfo
+     */
     private TopicPublishInfo tryToFindTopicPublishInfo(final String topic) {
+        // 从缓存信息中查找
         TopicPublishInfo topicPublishInfo = this.topicPublishInfoTable.get(topic);
+        // 本地缓存未获取到路由信息
         if (null == topicPublishInfo || !topicPublishInfo.ok()) {
+            // 创建默认路由信息
             this.topicPublishInfoTable.putIfAbsent(topic, new TopicPublishInfo());
+            // 向nameserver拉取路由信息 并更新到本地缓存
             this.mQClientFactory.updateTopicRouteInfoFromNameServer(topic);
             topicPublishInfo = this.topicPublishInfoTable.get(topic);
         }
-
+        // 如果生产者中缓存了topic的路由信息，且该路由信息包含消息队列，则直接返回该路由信息。
         if (topicPublishInfo.isHaveTopicRouterInfo() || topicPublishInfo.ok()) {
             return topicPublishInfo;
         } else {
@@ -877,6 +894,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         if (timeout < costTimeSync) {
                             throw new RemotingTooMuchRequestException("sendKernelImpl call timeout");
                         }
+                        // 发送消息
                         sendResult = this.mQClientFactory.getMQClientAPIImpl().sendMessage(
                             brokerAddr,
                             mq.getBrokerName(),
@@ -1398,6 +1416,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
     public SendResult send(Message msg,
         long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+        // 默认消息以同步方式发送，默认超时时间为3s
         return this.sendDefaultImpl(msg, CommunicationMode.SYNC, null, timeout);
     }
 

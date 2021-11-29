@@ -102,6 +102,7 @@ public class ClientConfig {
     }
 
     public String withNamespace(String resource) {
+        // 命名空间  topic
         return NamespaceUtil.wrapNamespace(this.getNamespace(), resource);
     }
 

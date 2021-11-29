@@ -160,6 +160,8 @@ public class MQClientInstance {
     public static TopicPublishInfo topicRouteData2TopicPublishInfo(final String topic, final TopicRouteData route) {
         TopicPublishInfo info = new TopicPublishInfo();
         info.setTopicRouteData(route);
+
+        // 将topicRouteData中的orderTopicConf 转换成topicPublishInfo的List <MessageQueue>列表
         if (route.getOrderTopicConf() != null && route.getOrderTopicConf().length() > 0) {
             String[] brokers = route.getOrderTopicConf().split(";");
             for (String broker : brokers) {
@@ -173,12 +175,16 @@ public class MQClientInstance {
 
             info.setOrderTopic(true);
         } else {
+            // 将topicRouteData中的List<QueueData> 转换成topicPublishInfo的List <MessageQueue>列表
             List<QueueData> qds = route.getQueueDatas();
             Collections.sort(qds);
+            // 循环遍历路由信息的QueueData信息，如果队列没有写权限，则继续遍历下一个QueueData。
             for (QueueData qd : qds) {
+                // 判断是否有写权限
                 if (PermName.isWriteable(qd.getPerm())) {
                     BrokerData brokerData = null;
                     for (BrokerData bd : route.getBrokerDatas()) {
+                        // 根据brokerName找到brokerData信息，如果找不到或没有找到主节点，则遍历下一个QueueData。
                         if (bd.getBrokerName().equals(qd.getBrokerName())) {
                             brokerData = bd;
                             break;
@@ -194,6 +200,7 @@ public class MQClientInstance {
                     }
 
                     for (int i = 0; i < qd.getWriteQueueNums(); i++) {
+                        // 根据写队列个数，topic+序号创建MessageQueue，填充topicPublishInfo的List<MessageQueue>，完成消息发送的路由查找。
                         MessageQueue mq = new MessageQueue(topic, qd.getBrokerName(), i);
                         info.getMessageQueueList().add(mq);
                     }
@@ -602,43 +609,62 @@ public class MQClientInstance {
         }
     }
 
+    /***
+     * 更新来自名称服务器的主题路由信息
+     * @param topic
+     * @param isDefault
+     * @param defaultMQProducer
+     * @return boolean
+     */
     public boolean updateTopicRouteInfoFromNameServer(final String topic, boolean isDefault,
         DefaultMQProducer defaultMQProducer) {
         try {
+            // 加锁
             if (this.lockNamesrv.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
                 try {
                     TopicRouteData topicRouteData;
+                    // 第一步：如果isDefault为true，则使用默认主题查询，如果查询到路由信息，则将路由信息中读写队列的个数替换为消息生产者默认的队列个数（defaultTopicQueueNums）；
+                    // 如果isDefault为false，则使用参数topic查询，如果未查询到路由信息，则返回false，表示路由信息未变化
                     if (isDefault && defaultMQProducer != null) {
+                        // 使用默认topic = "TBW102" 从nameserver服务器获取默认主题路由信息
                         topicRouteData = this.mQClientAPIImpl.getDefaultTopicRouteInfoFromNameServer(defaultMQProducer.getCreateTopicKey(),
                             1000 * 3);
                         if (topicRouteData != null) {
                             for (QueueData data : topicRouteData.getQueueDatas()) {
+                                // 默认的topic队列数量 ： 只读队列数量
                                 int queueNums = Math.min(defaultMQProducer.getDefaultTopicQueueNums(), data.getReadQueueNums());
                                 data.setReadQueueNums(queueNums);
                                 data.setWriteQueueNums(queueNums);
                             }
                         }
                     } else {
+                        // 从nameserver拉取路由信息
                         topicRouteData = this.mQClientAPIImpl.getTopicRouteInfoFromNameServer(topic, 1000 * 3);
                     }
                     if (topicRouteData != null) {
+                        // 如果找到路由信息，则与本地缓存中的路由信息进行对比
                         TopicRouteData old = this.topicRouteTable.get(topic);
+                        // 判断路由信息是否发生了改变，如果未发生变化，则直接返回false。
                         boolean changed = topicRouteDataIsChange(old, topicRouteData);
                         if (!changed) {
+                            // 第三步：更新MQClientInstance Broker地址缓存表
                             changed = this.isNeedUpdateTopicRouteInfo(topic);
                         } else {
                             log.info("the topic[{}] route info changed, old[{}] ,new[{}]", topic, old, topicRouteData);
                         }
-
+                        // changed = true 路由信息发生改变
                         if (changed) {
                             TopicRouteData cloneTopicRouteData = topicRouteData.cloneTopicRouteData();
 
+                            // 维护brokerAddrTable broker信息
                             for (BrokerData bd : topicRouteData.getBrokerDatas()) {
                                 this.brokerAddrTable.put(bd.getBrokerName(), bd.getBrokerAddrs());
                             }
 
                             // Update Pub info
                             {
+                                // 第四步：将topicRouteData中的List<QueueData> 转换成topicPublishInfo的List <MessageQueue>列表，
+                                // 具体实现在topicRouteData2TopicPublishInfo中。然后更新该MQClientInstance管辖的所有消息，发送关于topic的路由信息
                                 TopicPublishInfo publishInfo = topicRouteData2TopicPublishInfo(topic, topicRouteData);
                                 publishInfo.setHaveTopicRouterInfo(true);
                                 Iterator<Entry<String, MQProducerInner>> it = this.producerTable.entrySet().iterator();
@@ -668,6 +694,7 @@ public class MQClientInstance {
                             return true;
                         }
                     } else {
+                        // 没有拉取到路由信息
                         log.warn("updateTopicRouteInfoFromNameServer, getTopicRouteInfoFromNameServer return null, Topic: {}. [{}]", topic, this.clientId);
                     }
                 } catch (MQClientException e) {
@@ -799,6 +826,11 @@ public class MQClientInstance {
 
     }
 
+    /***
+     * 是否需要更新主题路由信息
+     * @param topic
+     * @return boolean
+     */
     private boolean isNeedUpdateTopicRouteInfo(final String topic) {
         boolean result = false;
         {
