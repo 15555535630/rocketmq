@@ -441,6 +441,7 @@ public class MQClientAPIImpl {
         final SendCallback sendCallback,
         final TopicPublishInfo topicPublishInfo,
         final MQClientInstance instance,
+        // 同步方式发送失败重试次数
         final int retryTimesWhenSendFailed,
         final SendMessageContext context,
         final DefaultMQProducerImpl producer

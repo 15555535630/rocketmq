@@ -25,18 +25,32 @@ import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageType;
 
 public class SendMessageContext {
+    // 生产者组
     private String producerGroup;
+
     private Message message;
+
     private MessageQueue mq;
+
     private String brokerAddr;
+
     private String bornHost;
+
     private CommunicationMode communicationMode;
+
     private SendResult sendResult;
+
     private Exception exception;
+
     private Object mqTraceContext;
+
     private Map<String, String> props;
+
     private DefaultMQProducerImpl producer;
+
     private MessageType msgType = MessageType.Normal_Msg;
+
+    // 命名空间
     private String namespace;
 
     public MessageType getMsgType() {
